@@ -7,17 +7,18 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   
-  <!-- Favicon -->
+  <!-- Favicon & Icons -->
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="favicon.png">
   
   <!-- PWA & Home Screen -->
   <meta name="application-name" content="Gym Tracker">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Gym Tracker">
-  <meta name="theme-color" content="#0f0f0f">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#10b981">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <style>
     * {
       margin: 0;
@@ -1700,9 +1701,7 @@
               { id: 'laterals', name: 'LATERAL RAISES', plannedSets: 4, plannedReps: '15', plannedRest: '60s', targetWeightLbs: 15 },
               { id: 'cablerow2', name: 'CABLE ROW', plannedSets: 3, plannedReps: '12', plannedRest: '60s', targetWeightLbs: 80 },
               { id: 'facepull', name: 'FACE PULL', plannedSets: 3, plannedReps: '15', plannedRest: '60s', targetWeightLbs: 90 },
-              { id: 'kbdeadlift', name: 'KB DEADLIFT', plannedSets: 3, plannedReps: '12', plannedRest: '', targetWeightLbs: 35 },
-              { id: 'gobletsquat', name: 'GOBLET SQUAT', plannedSets: 3, plannedReps: '10', plannedRest: '60s', targetWeightLbs: 35 },
-              { id: 'kbswing2', name: 'KB SWING', plannedSets: 1, plannedReps: '12', plannedRest: '', targetWeightLbs: 35 }
+              { id: 'kbcircuit', name: 'KB CIRCUIT: DEADLIFT + GOBLET SQUAT + SWING', plannedSets: 3, plannedReps: '12+10+12', plannedRest: '60s', targetWeightLbs: 35 }
             ]},
             { dayOfWeek: 'FRIDAY', focus: 'LOWER', exercises: [
               { id: 'rdl2', name: 'ROMANIAN DEADLIFT', plannedSets: 4, plannedReps: '5', plannedRest: '120s', targetWeightLbs: 80 },
@@ -1729,7 +1728,7 @@
         this.loadFromLocalStorage();
         
         // Always open the app on today with the current week visible
-        this.currentDate = new Date().toISOString().split('T')[0];
+        this.currentDate = this.toLocalDateStr(new Date());
         this.weekOffset = 0;
         
         this.updateUnitLabels();
@@ -1941,15 +1940,23 @@
         document.querySelectorAll(`[data-tab="${tabName}"]`).forEach(el => el.classList.add('active'));
       },
 
+      toLocalDateStr(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      },
+
       loadWeekCalendar() {
         const phase = this.trainingPlans.find(p => p.id === this.currentPhase);
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         let html = '';
 
-        // Calculate the start of the week with offset
+        // Calculate the start of the week (MONDAY) with offset
         const today = new Date();
         const startOfWeek = new Date(today);
-        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + (this.weekOffset * 7));
+        const daysSinceMonday = (today.getDay() + 6) % 7; // Mon=0, Tue=1 ... Sun=6
+        startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday + (this.weekOffset * 7));
 
         // Update week label
         const endOfWeek = new Date(startOfWeek);
@@ -1964,7 +1971,7 @@
         for (let i = 0; i < 7; i++) {
           const d = new Date(startOfWeek);
           d.setDate(d.getDate() + i);
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = this.toLocalDateStr(d);
           const dayOfWeek = dayNames[d.getDay()];
           const dayOfWeekName = this.getDayOfWeekFromDateString(dateStr);
           const workout = phase.workouts.find(w => w.dayOfWeek === dayOfWeekName);
@@ -2003,14 +2010,18 @@
 
       resetToCurrentWeek() {
         this.weekOffset = 0;
-        this.currentDate = new Date().toISOString().split('T')[0];
+        this.currentDate = this.toLocalDateStr(new Date());
         this.loadWeekCalendar();
         this.loadTodaysWorkout();
       },
 
       setupWeekSwipeListener() {
+        // Bind only ONCE — re-binding on every render caused one swipe
+        // to trigger many week jumps (calendar flying months ahead)
+        if (this._weekSwipeBound) return;
         const weekGrid = document.getElementById('weekCalendar');
         if (!weekGrid) return;
+        this._weekSwipeBound = true;
 
         let startX = 0;
         let startY = 0;
@@ -2018,7 +2029,7 @@
         weekGrid.addEventListener('touchstart', (e) => {
           startX = e.touches[0].clientX;
           startY = e.touches[0].clientY;
-        }, false);
+        }, { passive: true });
 
         weekGrid.addEventListener('touchend', (e) => {
           const endX = e.changedTouches[0].clientX;
@@ -2029,14 +2040,12 @@
           // Only trigger swipe if horizontal movement is greater than vertical
           if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
             if (diffX > 0) {
-              // Swiped left - go to next week
               this.nextWeek();
             } else {
-              // Swiped right - go to previous week
               this.previousWeek();
             }
           }
-        }, false);
+        }, { passive: true });
       },
 
       setupSwipeListener(elementId, exerciseId) {
@@ -2881,13 +2890,13 @@
         if (saved) {
           const data = JSON.parse(saved);
           this.currentPhase = data.currentPhase;
-          this.currentDate = data.currentDate || new Date().toISOString().split('T')[0];
+          this.currentDate = data.currentDate || this.toLocalDateStr(new Date());
           this.workoutLogs = Array.isArray(data.workoutLogs) ? data.workoutLogs : [];
           this.customExercises = Array.isArray(data.customExercises) ? data.customExercises : [];
           this.units = data.units || 'lbs';
           this.weekOffset = data.weekOffset || 0;
         } else {
-          this.currentDate = new Date().toISOString().split('T')[0];
+          this.currentDate = this.toLocalDateStr(new Date());
           this.workoutLogs = [];
           this.customExercises = [];
           this.weekOffset = 0;
